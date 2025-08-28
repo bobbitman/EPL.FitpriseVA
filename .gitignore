@@ -1,0 +1,42 @@
+# Build artifacts
+bin/
+obj/
+out/
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+
+# VS/JetBrains
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# ASP.NET publish output
+wwwroot/dist/
+wwwroot/build/
+
+# Node/React frontend (if you expand later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Secrets (keep out of git!)
+appsettings.*.json
+!appsettings.json            # allow base template (without secrets)
+
+# EF migrations snapshot (optional)
+Migrations/
+
+# Others
+*.swp
+*.tmp

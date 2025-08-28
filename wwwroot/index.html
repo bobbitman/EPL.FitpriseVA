@@ -1,0 +1,314 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FitpriseVA • Chat</title>
+    <!-- React via CDN (dev only). For production, use a proper bundler. -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --card: #161b2e;
+            --muted: #8a90a5;
+            --accent: #4e7cff;
+            --assistant: #1f243b;
+            --user: #2a3a8f;
+            --error: #7a1f2b;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: #e6e9f2;
+            font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif
+        }
+
+        .wrap {
+            max-width: 900px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            height: 100dvh;
+            padding: 0 12px
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            background: linear-gradient(180deg,#0b1020 70%,#0b1020cc 100%);
+            backdrop-filter: blur(6px);
+            z-index: 10
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 4px;
+            border-bottom: 1px solid #293050
+        }
+
+            .brand .dot {
+                width: 10px;
+                height: 10px;
+                border-radius: 999px;
+                background: var(--accent);
+                box-shadow: 0 0 10px var(--accent)
+            }
+
+            .brand h1 {
+                font-size: 16px;
+                margin: 0;
+                letter-spacing: .3px;
+                color: #fff
+            }
+
+        .chat {
+            flex: 1;
+            overflow: auto;
+            padding: 14px 2px 120px
+        }
+
+        .row {
+            display: flex;
+            margin: 10px 0
+        }
+
+            .row.user {
+                justify-content: flex-end
+            }
+
+        .bubble {
+            max-width: 78%;
+            padding: 12px 14px;
+            border-radius: 16px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: 0 4px 18px rgba(0,0,0,.25)
+        }
+
+        .user .bubble {
+            background: var(--user);
+            border-bottom-right-radius: 6px
+        }
+
+        .assistant .bubble {
+            background: var(--assistant);
+            border-bottom-left-radius: 6px
+        }
+
+        .error .bubble {
+            background: var(--error)
+        }
+
+        .meta {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 6px
+        }
+
+        .code {
+            background: #0e1224;
+            border: 1px solid #2b3154;
+            border-radius: 10px;
+            padding: 10px;
+            margin-top: 8px;
+            overflow: auto
+        }
+
+        .composer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(180deg,transparent,rgba(11,16,32,.9) 10%,rgba(11,16,32,1) 40%);
+        }
+
+            .composer .bar {
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 12px 12px 18px;
+                display: flex;
+                gap: 10px;
+                align-items: flex-end
+            }
+
+        textarea {
+            flex: 1;
+            min-height: 48px;
+            max-height: 160px;
+            resize: vertical;
+            background: var(--card);
+            color: #fff;
+            border: 1px solid #2b3154;
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 14px;
+            outline: none
+        }
+
+            textarea::placeholder {
+                color: #8a90a5
+            }
+
+        button {
+            background: var(--accent);
+            color: #fff;
+            border: 0;
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-weight: 600;
+            cursor: pointer
+        }
+
+            button:disabled {
+                opacity: .6;
+                cursor: not-allowed
+            }
+
+        .tips {
+            max-width: 900px;
+            margin: 6px auto 12px;
+            color: var(--muted);
+            font-size: 12px;
+            padding: 0 14px
+        }
+
+        a {
+            color: #93b0ff
+        }
+    </style>
+</head>
+<body>
+    <div id="root" class="wrap"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Change this if your API runs on a different origin/port.
+        // const API_BASE = window.location.origin; // e.g., "https://localhost:7290"
+        const API_BASE = "http://localhost:5290";
+
+        function ChatApp(){
+          const [conversationId, setConversationId] = useState(null);
+          const [messages, setMessages] = useState([
+            { role: 'assistant', content: 'Hi! I\'m FitpriseVA. Ask me something — I can search the web and your internal DB.' }
+          ]);
+          const [input, setInput] = useState('');
+          const [loading, setLoading] = useState(false);
+          const chatEndRef = useRef(null);
+
+          useEffect(()=>{ chatEndRef.current?.scrollIntoView({behavior:'smooth'}); }, [messages, loading]);
+
+          async function send(){
+            const text = input.trim();
+            if(!text || loading) return;
+            setInput('');
+            setMessages(prev => [...prev, { role:'user', content:text }]);
+            setLoading(true);
+            try {
+              console.log("[Chat] sending to /api/orchestrate", { conversationId, text });
+              const controller = new AbortController();
+              const t = setTimeout(() => controller.abort(), 65000); // 65s timeout
+
+              const res = await fetch(`${API_BASE}/api/orchestrate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ conversationId, input: text }),
+                signal: controller.signal
+              });
+
+              clearTimeout(t);
+
+              if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`HTTP ${res.status}: ${errText || res.statusText}`);
+              }
+
+              const data = await res.json();
+              if (data.conversationId) setConversationId(data.conversationId);
+              setMessages(prev => [...prev, { role: 'assistant', content: String(data.output ?? '') }]);
+
+            } catch (err) {
+              console.error("[Chat] fetch error", err);
+              const msg = (err && err.name === 'AbortError')
+                ? 'Request timed out (client-side after 65s).'
+                : String(err.message || err);
+              setMessages(prev => [...prev, { role: 'error', content: msg }]);
+            } finally {
+              setLoading(false);
+            }
+          }
+
+          function onKeyDown(e){
+            if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); }
+          }
+
+          function renderContent(text){
+            // Lightweight formatting: render fenced code blocks ``` as monospace blocks; else plain text.
+            const parts = String(text).split(/```/g);
+            if(parts.length > 1){
+              return (
+                <>
+                  {parts.map((p, i)=> i % 2 === 1
+                    ? <pre key={i} className="code">{p}</pre>
+                    : <span key={i}>{p}</span>
+                  )}
+                </>
+              );
+            }
+            return <span>{text}</span>;
+          }
+
+          return (
+            <>
+              <header>
+                <div className="brand">
+                  <div className="dot" />
+                  <h1>FitpriseVA — Orchestrator Chat</h1>
+                </div>
+              </header>
+
+              <div className="chat" id="chat">
+                {messages.map((m, idx)=> (
+                  <div key={idx} className={`row ${m.role}`}>
+                    <div className="bubble">{renderContent(m.content)}</div>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="row assistant"><div className="bubble"><em>Thinking…</em></div></div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              <div className="composer">
+                <div className="tips">Press <kbd>Enter</kbd> to send • <kbd>Shift</kbd>+<kbd>Enter</kbd> for newline. Calls <code>/api/orchestrate</code> and preserves <code>conversationId</code>.</div>
+                <div className="bar">
+                  <textarea
+                    placeholder="Ask something…"
+                    value={input}
+                    onChange={e=>setInput(e.target.value)}
+                    onKeyDown={onKeyDown}
+                  />
+                  <button onClick={send} disabled={loading || !input.trim()}>
+                    {loading ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+              </div>
+            </>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<ChatApp/>);
+    </script>
+</body>
+</html>
