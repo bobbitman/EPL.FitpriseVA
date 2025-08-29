@@ -1,90 +1,121 @@
-
 using FitpriseVA.Agents;
 using FitpriseVA.Data;
 using FitpriseVA.Data.Stores;
 using FitpriseVA.Tools;
+
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 using Microsoft.SemanticKernel;
-using System.Diagnostics;
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 
 var builder = WebApplication.CreateBuilder(args);
 var cfg = builder.Configuration;
 
+// ---------- Logging (shows up in VS Output -> Debug) ----------
 builder.Logging.ClearProviders();
-builder.Logging.AddDebug(); 
+builder.Logging.AddDebug();
 builder.Logging.AddConsole();
 
+// ---------- MVC / Controllers ----------
+builder.Services.AddControllers();
 
-// 1) EF Core + SQL Server
+// ---------- CORS (dev) ----------
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DevCors", policy =>
+    {
+        policy.WithOrigins(
+                "http://localhost:5290",
+                "https://localhost:7290"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+
+// ---------- Swagger ----------
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "FitpriseVA API", Version = "v1" });
+    // Force Swagger to use your localhost (adjust if your port differs)
+    c.AddServer(new OpenApiServer { Url = "http://localhost:5290" });
+});
+
+// ---------- EF Core (SQL Server) ----------
+//builder.Services.AddDbContext<AppDbContext>(opt =>
+//    opt.UseSqlServer(cfg.GetConnectionString("DefaultConnection"))
+//       .EnableSensitiveDataLogging()
+//       .EnableDetailedErrors());
+
 builder.Services.AddDbContext<AppDbContext>(opt =>
-opt.UseSqlServer(cfg.GetConnectionString("DefaultConnection")));
+    opt.UseSqlServer(cfg.GetConnectionString("DefaultConnection"))
+       .EnableSensitiveDataLogging()
+       .EnableDetailedErrors());
 
 
-builder.Services.AddScoped<ConversationStore>();
 
-
-// 2) Bind options
-builder.Services.Configure<OpenAIOptions>(cfg.GetSection("OpenAI"));
+// ---------- Options (tools) ----------
+builder.Services.Configure<InternalSearchOptions>(cfg.GetSection("InternalSearch"));
 builder.Services.Configure<GoogleSearchOptions>(cfg.GetSection("Google"));
 
+// ---------- HttpClient(s) ----------
+builder.Services.AddHttpClient<GoogleSearchTool>();
 
-// 3) Semantic Kernel + OpenAI chat + tool registration
-builder.Services.AddHttpClient();
-builder.Services.AddScoped<GoogleSearchTool>();
-builder.Services.AddScoped<InternalSearchTool>();
+// ---------- Semantic Kernel + OpenAI Chat ----------
+builder.Services.AddOpenAIChatCompletion(
+    modelId: cfg["OpenAI:Model"],
+    apiKey: cfg["OpenAI:ApiKey"]
+);
 
-builder.Services.AddSingleton(sp =>
+// Build a Kernel and attach your tools (plugins)
+// ---------- Semantic Kernel + OpenAI Chat (already registered above) ----------
+// Build a Kernel that uses the existing DI container (no assigning Services)
+builder.Services.AddSingleton<Kernel>(sp =>
 {
-    var openAi = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<OpenAIOptions>>().Value;
-    var kernelBuilder = Kernel.CreateBuilder();
+    var kernel = new Kernel(sp);
 
-    // OpenAI chat completion
-    kernelBuilder.AddOpenAIChatCompletion(modelId: openAi.Model, apiKey: openAi.ApiKey);
+    // Register only non-circular plugins here.
+    // GoogleSearchTool does NOT depend on Kernel, so it's safe:
+    kernel.Plugins.AddFromObject(sp.GetRequiredService<GoogleSearchTool>(), "google");
 
-    // Register tools (plugins)
-    kernelBuilder.Plugins.AddFromObject(sp.GetRequiredService<GoogleSearchTool>(), "google");
-    kernelBuilder.Plugins.AddFromObject(sp.GetRequiredService<InternalSearchTool>(), "internal");
+    // IMPORTANT: Do NOT add InternalSearchTool here — it depends (directly/indirectly) on Kernel,
+    // which would create a circular dependency and hang DI.
+    // You'll add/resolve InternalSearchTool inside your agent at call time if needed.
 
-    return kernelBuilder.Build();
+    return kernel;
 });
 
 
-builder.Services.AddScoped<AssistantAgent>();
-builder.Services.AddScoped<OrchestratorAgent>();
-
-builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-builder.Host.UseDefaultServiceProvider(options =>
-{
-    options.ValidateScopes = false;
-    options.ValidateOnBuild = false;
-});
+// ---------- App services (agents, stores, tools) ----------
+builder.Services.AddScoped<ConversationStore>();
+builder.Services.AddScoped<InternalSearchTool>(); // uses Kernel + SQL
+builder.Services.AddScoped<OrchestratorAgent>();  // uses Kernel + IChatCompletionService
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// ---------- Dev tools: Swagger UI at /swagger ----------
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "FitpriseVA v1");
-        c.RoutePrefix = "swagger";
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "FitpriseVA v1");
+    c.RoutePrefix = "swagger";
+});
 
-app.UseCors("DevCors");
+// ---------- Static files for your minimal React chat (wwwroot/index.html) ----------
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// ---------- CORS (must be before MapControllers) ----------
+app.UseCors("DevCors");
+
+// ---------- Map routes ----------
 app.MapControllers();
 
+// ---------- Route listing (handy while debugging) ----------
 var dataSource = app.Services.GetRequiredService<Microsoft.AspNetCore.Routing.EndpointDataSource>();
-foreach (var e in dataSource.Endpoints)
-    Console.WriteLine("[ROUTE] " + e.DisplayName);
-
-
-
+foreach (var e in dataSource.Endpoints) Console.WriteLine("[ROUTE] " + e.DisplayName);
 
 app.Run();

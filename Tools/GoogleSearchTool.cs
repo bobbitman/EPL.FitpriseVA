@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -13,22 +12,23 @@ namespace FitpriseVA.Tools
         public string Cx { get; set; } = string.Empty; // Programmable Search Engine ID
     }
 
-
     public record GoogleSearchResultItem(
-    [property: JsonPropertyName("title")] string Title,
-    [property: JsonPropertyName("link")] string Link,
-    [property: JsonPropertyName("snippet")] string Snippet
+        [property: JsonPropertyName("title")] string Title,
+        [property: JsonPropertyName("link")] string Link,
+        [property: JsonPropertyName("snippet")] string Snippet
     );
 
-
-    public class GoogleSearchTool(HttpClient http, IOptions<GoogleSearchOptions> opts)
+    // SINGLE constructor so DI knows which one to use
+    public class GoogleSearchTool
     {
-        private readonly HttpClient _http = http;
-        private readonly GoogleSearchOptions _opts = opts.Value;
+        private readonly HttpClient _http;
+        private readonly GoogleSearchOptions _opts;
 
-        public GoogleSearchTool(HttpClient httpClient, IOptions<GoogleSearchOptions> options, IConfiguration cfg) : this(httpClient, options)
+        public GoogleSearchTool(HttpClient http, IOptions<GoogleSearchOptions> opts)
         {
-            _http.Timeout = TimeSpan.FromSeconds(15); // fail fast
+            _http = http;
+            _opts = opts.Value;
+            _http.Timeout = TimeSpan.FromSeconds(15); // fail fast in dev
         }
 
         [KernelFunction("web_search")]
@@ -49,7 +49,7 @@ namespace FitpriseVA.Tools
                 if (!resp.IsSuccessStatusCode)
                     return $"_Google error {((int)resp.StatusCode)}: {raw}_";
 
-                var doc = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(raw);
+                var doc = JsonSerializer.Deserialize<JsonElement>(raw);
                 if (!doc.TryGetProperty("items", out var items)) return "No results.";
 
                 var take = Math.Min(maxResults, items.GetArrayLength());
@@ -74,5 +74,4 @@ namespace FitpriseVA.Tools
             }
         }
     }
-
 }
