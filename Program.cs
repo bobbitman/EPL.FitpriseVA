@@ -1,6 +1,7 @@
 using FitpriseVA.Agents;
 using FitpriseVA.Data;
 using FitpriseVA.Data.Stores;
+using FitpriseVA.Services;
 using FitpriseVA.Tools;
 
 using Microsoft.EntityFrameworkCore;
@@ -64,6 +65,7 @@ builder.Services.Configure<GoogleSearchOptions>(cfg.GetSection("Google"));
 // ---------- HttpClient(s) ----------
 builder.Services.AddHttpClient<GoogleSearchTool>();
 
+
 // ---------- Semantic Kernel + OpenAI Chat ----------
 builder.Services.AddOpenAIChatCompletion(
     modelId: cfg["OpenAI:Model"],
@@ -94,6 +96,9 @@ builder.Services.AddScoped<ConversationStore>();
 builder.Services.AddScoped<InternalSearchTool>(); // uses Kernel + SQL
 builder.Services.AddScoped<OrchestratorAgent>();  // uses Kernel + IChatCompletionService
 
+builder.Services.AddMemoryCache();
+builder.Services.AddSingleton<IChatMemory, ChatMemory>();
+
 var app = builder.Build();
 
 // ---------- Dev tools: Swagger UI at /swagger ----------
@@ -113,9 +118,5 @@ app.UseCors("DevCors");
 
 // ---------- Map routes ----------
 app.MapControllers();
-
-// ---------- Route listing (handy while debugging) ----------
-var dataSource = app.Services.GetRequiredService<Microsoft.AspNetCore.Routing.EndpointDataSource>();
-foreach (var e in dataSource.Endpoints) Console.WriteLine("[ROUTE] " + e.DisplayName);
 
 app.Run();

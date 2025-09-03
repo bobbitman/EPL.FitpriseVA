@@ -32,7 +32,8 @@ public class OrchestrateController : ControllerBase
             await store.AddMessageAsync(conv.Id, "user", req.Input, ct);
 
             Debug.WriteLine("Agent: calling GetReplyAsync…");
-            var output = await agent.GetReplyAsync(req.Input, ct);
+            var conversationId = (req.ConversationId == Guid.Empty ? conv.Id : req.ConversationId).ToString();
+            var output = await agent.GetReplyAsync(req.Input, ct, conversationId);
 
             Debug.WriteLine("DB: AddMessageAsync(assistant)...");
             await store.AddMessageAsync(conv.Id, "assistant", output, ct);
@@ -45,5 +46,4 @@ public class OrchestrateController : ControllerBase
             return StatusCode(500, new { error = $"SQL#{ex.Number}: {ex.Message}" });
         }
     }
-
 }
